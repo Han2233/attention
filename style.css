@@ -193,6 +193,8 @@ li { margin: 5px 0; }
   border-radius: 12px; padding: 18px 22px; margin: 14px 0;
   font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
   font-size: 13.5px; line-height: 1.7; overflow-x: auto;
+  white-space: pre-wrap;          /* 关键：保留换行与缩进，否则代码挤成一行 */
+  tab-size: 4;
 }
 .code .cm { color: #64748b; }
 .code .kw { color: #f472b6; }
@@ -200,6 +202,55 @@ li { margin: 5px 0; }
 .code .num { color: #fbbf24; }
 .code .cap { color: #6ee7b7; }
 .code .str { color: #a5f3fc; }
+
+/* ---------- 代码逐步执行演示（演示 5） ---------- */
+.step-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 860px) { .step-grid { grid-template-columns: 1.15fr 1fr; align-items: start; } }
+.code-lines {
+  background: #0f172a; border-radius: 12px; padding: 14px 0;
+  font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  font-size: 13px; line-height: 1.85; overflow-x: auto;
+  white-space: pre-wrap;
+  counter-reset: ln;
+}
+.code-lines .ln {
+  display: block;
+  padding: 0 16px 0 52px;
+  position: relative;
+  color: #cbd5e1;
+  min-height: 1.85em;
+}
+.code-lines .ln::before {
+  counter-increment: ln;
+  content: counter(ln);
+  position: absolute; left: 0; width: 38px;
+  text-align: right; color: #475569; font-size: 11.5px; padding-top: 2px;
+}
+.code-lines .ln.hl { background: rgba(124, 58, 237, .28); border-left: 3px solid #a78bfa; color: #fff; }
+.code-lines .ln.hl::before { color: #a78bfa; }
+.code-lines .ln.dim { opacity: .45; }
+.code-lines .cm { color: #64748b; }
+.code-lines .kw { color: #f472b6; }
+.code-lines .fnc { color: #7dd3fc; }
+.code-lines .num { color: #fbbf24; }
+
+.step-panel {
+  background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+}
+.step-panel h4 { margin: 0 0 8px; color: var(--primary-deep); font-size: 15px; }
+.step-desc { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 10px; min-height: 42px; }
+.mtable { border-collapse: collapse; margin: 6px auto; font-family: var(--font-serif); font-size: 13px; }
+.mtable td {
+  border: 1px solid #e2e8f0;
+  padding: 4px 9px; text-align: center; color: #334155;
+  background: #f8fafc;
+}
+.mtable td.hot { background: #ede9fe; color: #5b21b6; font-weight: 700; }
+.mtable td.mx { background: #ddd6fe; color: #4c1d95; font-weight: 700; }
+.mtable .mlab {
+  background: #f1f5f9; color: #64748b; font-size: 11.5px; border: none; text-align: right; padding-right: 6px;
+}
+.mtable .mtop { background: #f1f5f9; color: #64748b; font-size: 11.5px; border: none; }
 
 /* ---------- 表格 ---------- */
 table.tb {

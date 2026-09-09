@@ -379,6 +379,158 @@ function watchSize(canvas, redraw) {
 })();
 
 /* ============================================================
+   演示 5：代码逐步执行可视化（NumPy 注意力实现）
+   左边代码行高亮，右边矩阵面板逐步展示中间结果
+   ============================================================ */
+(function () {
+  const codeEl = document.getElementById('step-code');
+  const panelEl = document.getElementById('step-panel');
+  const prevBtn = document.getElementById('step-prev');
+  const nextBtn = document.getElementById('step-next');
+  const autoBtn = document.getElementById('step-auto');
+  const resetBtn = document.getElementById('step-reset');
+
+  // 展示用的代码（与 8.1 一致，带语法着色）
+  const CODE_LINES = [
+    '<span class="kw">import</span> numpy <span class="kw">as</span> np',
+    '<span class="kw">def</span> <span class="fnc">attention</span>(Q, K, V, mask=<span class="kw">None</span>):',
+    '    d_k = Q.shape[-<span class="num">1</span>]',
+    '    scores = Q @ K.transpose(-<span class="num">2</span>, -<span class="num">1</span>) / np.sqrt(d_k)',
+    '    <span class="kw">if</span> mask <span class="kw">is not</span> <span class="kw">None</span>:',
+    '        scores = np.where(mask == <span class="num">0</span>, -<span class="num">1e9</span>, scores)',
+    '    exp_scores = np.exp(scores - scores.max(axis=-<span class="num">1</span>, keepdims=<span class="kw">True</span>))',
+    '    attn_weights = exp_scores / exp_scores.sum(axis=-<span class="num">1</span>, keepdims=<span class="kw">True</span>)',
+    '    output = attn_weights @ V',
+    '    <span class="kw">return</span> output, attn_weights',
+  ];
+
+  // 迷你数据：d_k=3，3 个查询、4 个键值
+  const Q = [[1, 0, 1], [0, 1, 1], [1, 1, 0]];
+  const K = [[1, 0, 1], [0, 1, 0], [1, 1, 1], [0, 0, 1]];
+  const V = [[1, 2], [0, 1], [1, 0], [2, 3]];
+  const DK = Math.sqrt(3);
+
+  // 预计算各步骤的中间结果
+  const raw = Q.map((q) => K.map((k) => q.reduce((s, qv, i) => s + qv * k[i], 0)));
+  const scaled = raw.map((row) => row.map((v) => v / DK));
+  const weights = scaled.map((row) => {
+    const m = Math.max(...row);
+    const exps = row.map((v) => Math.exp(v - m));
+    const sum = exps.reduce((a, b) => a + b, 0);
+    return exps.map((e) => e / sum);
+  });
+  const out = weights.map((wrow) =>
+    V[0].map((_, c) => wrow.reduce((s, wv, r) => s + wv * V[r][c], 0))
+  );
+
+  // 矩阵渲染助手：data 二维数组，行/列标签，可指定每行最大值的着色
+  function mtable(data, rlabs, clabs, markMax) {
+    let html = '<table class="mtable"><tr><td class="mlab"></td>' +
+      clabs.map((c) => '<td class="mtop">' + c + '</td>').join('') + '</tr>';
+    data.forEach((row, i) => {
+      const mx = markMax ? row.indexOf(Math.max(...row)) : -1;
+      html += '<tr><td class="mlab">' + rlabs[i] + '</td>' +
+        row.map((v, j) => {
+          let cls = '';
+          if (markMax && j === mx) cls = ' class="mx"';
+          else if (markMax && v > 1) cls = ' class="hot"';
+          const shown = markMax ? fmt(v, 3) : fmt(v, 2);
+          return '<td' + cls + '>' + shown + '</td>';
+        }).join('') + '</tr>';
+    });
+    return html + '</table>';
+  }
+
+  // 7 个步骤：每步高亮的代码行 + 右侧面板内容
+  const STEPS = [
+    {
+      title: '第 0 步 · 输入：Q、K、V（形状）',
+      lines: [],
+      desc: 'Q: (n_q=3, d_k=3) 三个查询向量；K: (n_k=4, d_k=3) 四个键；V: (n_k=4, d_v=2) 四个值（2 维）。注意 K 和 V 的行数相同——每个键配一个值。',
+      html: '<b>Q（查询）</b>' + mtable(Q, ['q₁', 'q₂', 'q₃'], ['d₁', 'd₂', 'd₃'], false) +
+        '<b>K（键）</b>' + mtable(K, ['k₁', 'k₂', 'k₃', 'k₄'], ['d₁', 'd₂', 'd₃'], false) +
+        '<b>V（值）</b>' + mtable(V, ['k₁', 'k₂', 'k₃', 'k₄'], ['dᵥ₁', 'dᵥ₂'], false),
+    },
+    {
+      title: '第 1 步 · d_k = Q.shape[-1]',
+      lines: [2],
+      desc: '取 Q 最后一维 = 每个向量的维度。本演示 d_k = <b>3</b>，缩放因子为 √3 ≈ 1.732。',
+      html: '<b>d_k = 3</b>，缩放因子 √d_k = √3 ≈ <b>1.732</b>',
+    },
+    {
+      title: '第 2 步 · scores = Q·Kᵀ（打分）',
+      lines: [3],
+      desc: '每个查询与每个键做点积：第 i 行第 j 列 = qᵢ·kⱼ（语义相似度）。紫色 = 每行最高分——注意 q₁ 最「喜欢」k₃、q₃ 最「喜欢」k₃。',
+      html: '<b>原始分数 QKᵀ（3×4）</b>' + mtable(raw, ['q₁', 'q₂', 'q₃'], ['k₁', 'k₂', 'k₃', 'k₄'], true),
+    },
+    {
+      title: '第 3 步 · 除以 √d_k（缩放）',
+      lines: [3],
+      desc: '同一行代码的第二步：所有分数 ÷ √3。数值整体变小、彼此差距被压缩——防止大维度下 Softmax 饱和。',
+      html: '<b>缩放后分数（÷√3）</b>' + mtable(scaled, ['q₁', 'q₂', 'q₃'], ['k₁', 'k₂', 'k₃', 'k₄'], true),
+    },
+    {
+      title: '第 4 步 · mask 判断',
+      lines: [4, 5],
+      desc: '本演示没有掩码，<b>直接跳过</b>这两行。真实场景：把被禁止位置的分数设为 −1e9（≈ −∞），Softmax 后权重精确为 0（见第 6 章演示 4）。',
+      html: '<b>mask = None → 跳过 if 分支</b>',
+    },
+    {
+      title: '第 5 步 · Softmax 归一化',
+      lines: [6, 7],
+      desc: '每行先减最大值（数值稳定，结果不变），再 exp、再除以行和。结果：<b>每行都是和为 1 的概率分布</b>——「看哪里、看多重」。',
+      html: '<b>注意力权重（每行和 = 1）</b>' + mtable(weights, ['q₁', 'q₂', 'q₃'], ['k₁', 'k₂', 'k₃', 'k₄'], true) +
+        '<p style="font-size:12.5px;color:var(--ink-faint);margin-top:6px">例：q₁ 把 45.6% 的注意力给了 k₃。</p>',
+    },
+    {
+      title: '第 6 步 · output = attn·V（加权求和）',
+      lines: [8, 9],
+      desc: '输出的第 i 行 = 所有值向量按第 i 行权重混合。例如 output[0] = 0.256·v₁ + 0.144·v₂ + 0.456·v₃ + 0.144·v₄。每个输出向量已经「融合」了它最关心的那些词的信息——这就是注意力之后的词表示。',
+      html: '<b>输出（3×2，新表示）</b>' + mtable(out, ['out₁', 'out₂', 'out₃'], ['dᵥ₁', 'dᵥ₂'], false) +
+        '<p style="font-size:12.5px;color:var(--ink-faint);margin-top:6px">output[0] = 0.256×(1,2) + 0.144×(0,1) + 0.456×(1,0) + 0.144×(2,3) = (' + fmt(out[0][0], 3) + ', ' + fmt(out[0][1], 3) + ')</p>',
+    },
+  ];
+
+  let step = 0;
+  let timer = null;
+
+  function render() {
+    const s = STEPS[step];
+    // 代码行：高亮当前步骤涉及的行，其余淡化
+    codeEl.innerHTML = CODE_LINES.map((ln, i) =>
+      '<span class="ln' + (s.lines.includes(i) ? ' hl' : ' dim') + '">' + ln + '</span>'
+    ).join('');
+    panelEl.innerHTML = '<h4>' + s.title + '</h4>' +
+      '<p class="step-desc">' + s.desc + '</p>' + s.html;
+    autoBtn.textContent = timer ? '暂停' : '自动播放';
+  }
+
+  function go(delta) {
+    step = Math.min(STEPS.length - 1, Math.max(0, step + delta));
+    render();
+  }
+  function stopAuto() {
+    if (timer) { clearInterval(timer); timer = null; render(); }
+  }
+
+  prevBtn.addEventListener('click', () => { stopAuto(); go(-1); });
+  nextBtn.addEventListener('click', () => { stopAuto(); go(1); });
+  resetBtn.addEventListener('click', () => { stopAuto(); step = 0; render(); });
+  autoBtn.addEventListener('click', () => {
+    if (timer) { stopAuto(); return; }
+    if (step >= STEPS.length - 1) step = -1;
+    timer = setInterval(() => {
+      step++;
+      render();
+      if (step >= STEPS.length - 1) stopAuto();
+    }, 2200);
+    render();
+  });
+
+  render();
+})();
+
+/* ============================================================
    页面 UI：导航高亮 + 回到顶部
    ============================================================ */
 (function () {

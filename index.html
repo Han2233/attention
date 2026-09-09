@@ -292,6 +292,22 @@
     output = attn_weights @ V
     <span class="kw">return</span> output, attn_weights</div>
 
+    <h3>8.1+ 跟着代码走一遍：逐步执行演示</h3>
+    <div class="demo">
+      <p class="demo-title">演示 5 · 代码逐步执行可视化</p>
+      <p class="demo-tip">用一组迷你矩阵（d_k=3，3 个查询、4 个键值）真实跑一遍 NumPy 代码。点「下一步」，左边高亮当前执行的代码行，右边同步显示该步骤算出的矩阵和解释——每行代码做什么、结果是什么，一目了然。</p>
+      <div class="step-grid">
+        <div class="code-lines" id="step-code"></div>
+        <div class="step-panel" id="step-panel"></div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="step-prev">上一步</button>
+        <button class="btn primary" id="step-next">下一步</button>
+        <button class="btn" id="step-auto">自动播放</button>
+        <button class="btn" id="step-reset">重置</button>
+      </div>
+    </div>
+
     <h3>8.2 PyTorch 版：完整多头注意力</h3>
     <div class="code"><span class="cm"># 手撕 2：多头注意力（PyTorch 版，面试常考）</span>
 <span class="kw">import</span> torch
