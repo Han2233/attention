@@ -324,7 +324,12 @@ table.att .rowlab { background: #faf8ff; font-weight: 600; white-space: nowrap; 
 .wbar { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 13px; }
 .wbar .wn { flex: 0 0 92px; text-align: right; color: var(--ink-soft); font-weight: 600; }
 .wbar .wt { flex: 1; height: 14px; background: #f1f5f9; border-radius: 5px; overflow: hidden; }
-.wbar .wf { height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); }
+.wbar .wf {
+  display: block;                 /* span 默认是行内元素，必须转块级才能生效宽高，否则颜色条永远不显示 */
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  border-radius: 5px;
+}
 .wbar .wv { flex: 0 0 46px; font-family: var(--font-serif); color: var(--ink-faint); font-size: 12.5px; }
 
 /* ---------- 面试问答 ---------- */
