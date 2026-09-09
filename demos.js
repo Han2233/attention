@@ -233,14 +233,20 @@ function watchSize(canvas, redraw) {
       '<span class="wv">' + fmt(x.v * 100, 0) + '%</span></div>'
     ).join('');
 
-    const sLine = top.map((x) => 's(' + TOKENS[x.i] + ') = ' + fmt(SCORES[sel][x.i], 1)).join('，');
-    const scaledLine = top.map((x) => 's/' + (scaleEl.checked ? '√' + dk + '=' + fmt(SCORES[sel][x.i] / Math.sqrt(dk), 2) : '(无缩放) ' + fmt(SCORES[sel][x.i], 2))).join('，');
+    // 每个词都带上名字，避免「s/√16=1.55」这种读不懂的展示
+    const sLine = top.map((x) => 's(<b>' + TOKENS[x.i] + '</b>) = ' + fmt(SCORES[sel][x.i], 1)).join('，');
+    const scaledLine = top.map((x) => {
+      const s = SCORES[sel][x.i];
+      const sc = scaleEl.checked ? s / Math.sqrt(dk) : s;
+      return 's(<b>' + TOKENS[x.i] + '</b>) = ' + fmt(s, 1) +
+        (scaleEl.checked ? '　÷√' + dk + ' →　' + fmt(sc, 2) : '　' + fmt(sc, 2));
+    }).join('，');
 
     infoEl.innerHTML =
       '<b>查询词「' + TOKENS[sel] + '」的计算过程：</b><br>' +
-      '① 打分：' + sLine + '；<br>' +
+      '① 打分（点积）：' + sLine + '；<br>' +
       '② 缩放：' + scaledLine + '；<br>' +
-      '③ Softmax → 权重（top 4）：' +
+      '③ Softmax 归一化 → 权重（按权重从大到小，前 4 名）：' +
       '<div style="margin-top:6px">' + bars + '</div>' +
       '④ 输出 = Σ 权重ⱼ × vⱼ —— 这就是「' + TOKENS[sel] + '」位置的上下文感知表示。' +
       (sel === 7 ? '<br><b style="color:#6d28d9">看点：it 把大部分权重给了 animal（6.2 分）——模型「看懂」了 it 指代 animal！</b>' : '');
