@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>注意力机制 · 互动可视化 + 面试手撕代码</title>
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -23,13 +23,14 @@
   <div class="nav-inner" id="topNav">
     <a href="#s1">1 为什么需要注意力</a>
     <a href="#s2">2 核心直觉</a>
-    <a href="#s3">3 公式拆解</a>
-    <a href="#s4">4 热力图实验室</a>
-    <a href="#s5">5 多头注意力</a>
-    <a href="#s6">6 掩码 Mask</a>
-    <a href="#s7">7 自注意力 vs 交叉注意力</a>
-    <a href="#s8">8 面试手撕代码</a>
-    <a href="#s9">9 面试追问清单</a>
+    <a href="#s3">3 Q·K·V 怎么来</a>
+    <a href="#s4">4 公式拆解</a>
+    <a href="#s5">5 热力图实验室</a>
+    <a href="#s6">6 多头注意力</a>
+    <a href="#s7">7 掩码 Mask</a>
+    <a href="#s8">8 自注意力 vs 交叉注意力</a>
+    <a href="#s9">9 面试手撕代码</a>
+    <a href="#s10">10 面试追问清单</a>
   </div>
 </nav>
 
@@ -106,9 +107,59 @@
     </div>
   </section>
 
+  <!-- ======================= 3 Q·K·V 怎么来 ======================= -->
+  <section class="chapter" id="s4">
+    <h2><span class="chapter-no">3</span>Q、K、V 是怎么来的？</h2>
+    <p class="chapter-sub">Where do Q, K, V come from</p>
+
+    <p>Q、K、V 不是天上掉下来的——在自注意力里，它们<strong>都来自同一个输入</strong>，只是分别乘上了三个<strong>可学习的权重矩阵</strong>：</p>
+
+    <div class="formula">
+      <span class="fn">三个线性投影（W 是训练出来的参数，不是人定的）：</span>
+      <i>Q</i> = <i>X</i>·<i>W</i><sup>Q</sup>　　<i>K</i> = <i>X</i>·<i>W</i><sup>K</sup>　　<i>V</i> = <i>X</i>·<i>W</i><sup>V</sup>
+    </div>
+
+    <table class="tb">
+      <tr><th>项目</th><th>形状 / 说明</th></tr>
+      <tr><td>输入 X</td><td>(n, d_model)：n 个词，每个词 d_model 维（BERT base 是 768 维）</td></tr>
+      <tr><td>权重 W^Q、W^K、W^V</td><td>(d_model, d_k) 各一个；多头时<strong>每个头一组</strong>（d_k = d_model ÷ 头数）</td></tr>
+      <tr><td>输出 Q、K、V</td><td>Q: (n, d_k)、K: (n, d_k)、V: (n, d_v)（自注意力里 d_v = d_k）</td></tr>
+    </table>
+
+    <h3>为什么同一个输入要投影三次？</h3>
+    <p>因为同一个词在不同角色下应该是<strong>不同的向量</strong>：</p>
+    <ul>
+      <li>作为 <b>Q</b>（我要找什么）——词在「提问空间」的表示：it 的 q 会偏向「找名词」；</li>
+      <li>作为 <b>K</b>（我能匹配什么）——词在「被查空间」的表示：animal 的 k 会偏向「我是动物、可被 it 匹配」；</li>
+      <li>作为 <b>V</b>（我能贡献什么）——词在「内容空间」的表示：真正被加权取走的是这层内容。</li>
+    </ul>
+    <div class="analogy"><span class="tag">通俗理解</span>图书馆里，同一个「词」既是借书人（Q）、又是标签（K）、又是书的内容（V）。同一个东西要扮演三种角色，自然需要三张不同的「角色卡」——三张角色卡就是三个投影矩阵。</div>
+
+    <h3>动手看：Q·K·V 生成工厂</h3>
+    <div class="demo">
+      <p class="demo-title">演示 6 · Q·K·V 生成工厂（矩阵乘法全过程）</p>
+      <p class="demo-tip">迷你数据：4 个词、d_model=6、2 个头 → 每头 d_k=3。点击任意一个词，看它一行向量怎么分别与 W^Q、W^K、W^V 相乘得到 q、k、v 三个向量——注意同一个词的 q、k、v 是完全不同的三个向量（因为三个权重矩阵不同）。</p>
+      <div class="tok-row" id="qkv-toks"></div>
+      <div class="step-grid" style="margin-top:6px">
+        <div id="qkv-input"></div>
+        <div id="qkv-weights"></div>
+      </div>
+      <div id="qkv-output"></div>
+      <div class="demo-info" id="qkv-info"></div>
+    </div>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>Q、K、V = 同一输入 × 三个可学习权重矩阵（W^Q、W^K、W^V）。</li>
+        <li>三个投影让同一个词在「提问 / 被查 / 内容」三个空间有不同表示。</li>
+        <li>交叉注意力例外：Q 来自解码器、K/V 来自编码器（见第 7 章）。</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- ======================= 3 公式拆解 ======================= -->
-  <section class="chapter" id="s3">
-    <h2><span class="chapter-no">3</span>公式拆解：四步走</h2>
+  <section class="chapter" id="s4">
+    <h2><span class="chapter-no">4</span>公式拆解：四步走</h2>
     <p class="chapter-sub">Scaled Dot-Product Attention</p>
 
     <div class="formula">
@@ -140,8 +191,8 @@
   </section>
 
   <!-- ======================= 4 热力图实验室 ======================= -->
-  <section class="chapter" id="s4">
-    <h2><span class="chapter-no">4</span>热力图实验室：看模型「在看哪里」</h2>
+  <section class="chapter" id="s5">
+    <h2><span class="chapter-no">5</span>热力图实验室：看模型「在看哪里」</h2>
     <p class="chapter-sub">Attention Heatmap Lab</p>
 
     <p>经典例句（BERT 论文用过的例子）：<em>"The animal didn't cross the street because <b>it</b> was too tired"</em>——这里的 "it" 指谁？热力图会告诉你模型认为它指 "animal"。</p>
@@ -170,8 +221,8 @@
   </section>
 
   <!-- ======================= 5 多头注意力 ======================= -->
-  <section class="chapter" id="s5">
-    <h2><span class="chapter-no">5</span>多头注意力：让多个头「各看各的」</h2>
+  <section class="chapter" id="s6">
+    <h2><span class="chapter-no">6</span>多头注意力：让多个头「各看各的」</h2>
     <p class="chapter-sub">Multi-Head Attention</p>
 
     <p>一个注意力只能学到一种「看」的模式。多头（<span class="en">Multi-Head</span>）把 Q、K、V 分别投影到 h 个子空间，每个头独立做注意力，最后拼接起来再投影：</p>
@@ -205,8 +256,8 @@
   </section>
 
   <!-- ======================= 6 掩码 ======================= -->
-  <section class="chapter" id="s6">
-    <h2><span class="chapter-no">6</span>掩码 Mask：让模型「不许偷看」</h2>
+  <section class="chapter" id="s7">
+    <h2><span class="chapter-no">7</span>掩码 Mask：让模型「不许偷看」</h2>
     <p class="chapter-sub">Padding Mask & Causal Mask</p>
 
     <p>两种常见掩码：</p>
@@ -237,8 +288,8 @@
   </section>
 
   <!-- ======================= 7 自注意力 vs 交叉注意力 ======================= -->
-  <section class="chapter" id="s7">
-    <h2><span class="chapter-no">7</span>自注意力 vs 交叉注意力</h2>
+  <section class="chapter" id="s8">
+    <h2><span class="chapter-no">8</span>自注意力 vs 交叉注意力</h2>
     <p class="chapter-sub">Self-Attention & Cross-Attention</p>
 
     <table class="tb">
@@ -267,8 +318,8 @@
   </section>
 
   <!-- ======================= 8 面试手撕代码 ======================= -->
-  <section class="chapter" id="s8">
-    <h2><span class="chapter-no">8</span>面试手撕代码</h2>
+  <section class="chapter" id="s9">
+    <h2><span class="chapter-no">9</span>面试手撕代码</h2>
     <p class="chapter-sub">Implement Attention from Scratch</p>
 
     <p>面试官最爱让候选人手写「缩放点积注意力」甚至完整的多头注意力。<strong>写作顺序建议</strong>：① 先口述公式 Attention(Q,K,V)=softmax(QKᵀ/√d_k)V；② 讲清四个关键细节（缩放、Softmax、数值稳定、mask）；③ 再动手写代码。下面代码全部用 <strong>PyTorch</strong>。</p>
@@ -345,8 +396,8 @@ mask = torch.tril(torch.ones(seq_len, seq_len))   <span class="cm"># 下三角�
   </section>
 
   <!-- ======================= 9 面试追问清单 ======================= -->
-  <section class="chapter" id="s9">
-    <h2><span class="chapter-no">9</span>面试追问清单</h2>
+  <section class="chapter" id="s10">
+    <h2><span class="chapter-no">10</span>面试追问清单</h2>
     <p class="chapter-sub">Follow-up Questions</p>
 
     <table class="tb">
@@ -367,7 +418,7 @@ mask = torch.tril(torch.ones(seq_len, seq_len))   <span class="cm"># 下三角�
       <ul>
         <li>核心追问绕不开：√d_k、Softmax、mask、复杂度、KV Cache。</li>
         <li>回答公式：先说「一句话结论」，再补「为什么」，最后举一个例子。</li>
-        <li>配合第 8 章代码边写边讲，面试基本稳了。</li>
+        <li>配合第 9 章代码边写边讲，面试基本稳了。</li>
       </ul>
     </div>
   </section>
@@ -378,6 +429,6 @@ mask = torch.tril(torch.ones(seq_len, seq_len))   <span class="cm"># 下三角�
 <button class="to-top" id="toTop" title="回到顶部">&#8593;</button>
 <footer>注意力机制 · 互动可视化 + 面试手撕代码 · 本地网页无依赖</footer>
 
-<script src="demos.js?v=4"></script>
+<script src="demos.js?v=6"></script>
 </body>
 </html>

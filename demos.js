@@ -549,6 +549,92 @@ function watchSize(canvas, redraw) {
 })();
 
 /* ============================================================
+   演示 6：Q·K·V 生成工厂
+   输入 X × 三个权重矩阵 → Q、K、V；点击词看逐元素点积算式
+   ============================================================ */
+(function () {
+  const toksEl = document.getElementById('qkv-toks');
+  const inputEl = document.getElementById('qkv-input');
+  const weightsEl = document.getElementById('qkv-weights');
+  const outputEl = document.getElementById('qkv-output');
+  const infoEl = document.getElementById('qkv-info');
+
+  // 迷你数据：4 个词 × 6 维；三个权重矩阵 6×3（每头 d_k=3）
+  const X = [[1, 0, 1, 0, 1, 0], [0, 1, 1, 0, 0, 1], [1, 1, 0, 1, 0, 0], [0, 0, 1, 1, 1, 0]];
+  const WQ = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const WK = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]];
+  const WV = [[1, 1, 0], [0, 1, 1], [1, 0, 1], [1, 1, 1], [0, 0, 1], [1, 0, 0]];
+  const NAMES = ['词1', '词2', '词3', '词4'];
+
+  // 矩阵乘法：X(n×6) · W(6×3) → n×3
+  function matmul(Xm, Wm) {
+    return Xm.map((row) =>
+      Wm[0].map((_, c) => row.reduce((s, v, r) => s + v * Wm[r][c], 0))
+    );
+  }
+  const Q = matmul(X, WQ), K = matmul(X, WK), V = matmul(X, WV);
+
+  let sel = 0;
+
+  // 通用小矩阵表格：highlight 为需要高亮的行下标（-1 表示无）
+  function mtable(data, rlabs, clabs, hlRow, cls) {
+    let html = '<table class="mtable"><tr><td class="mlab"></td>' +
+      clabs.map((c) => '<td class="mtop">' + c + '</td>').join('') + '</tr>';
+    data.forEach((row, i) => {
+      const h = i === hlRow;
+      html += '<tr><td class="mlab"' + (h ? ' style="font-weight:700;color:#6d28d9"' : '') + '>' + rlabs[i] + '</td>' +
+        row.map((v) => '<td' + (h ? ' style="background:#ede9fe;color:#5b21b6;font-weight:700"' : (cls ? ' class="' + cls + '"' : '')) + '>' + v + '</td>').join('') + '</tr>';
+    });
+    return html + '</table>';
+  }
+
+  function render() {
+    toksEl.innerHTML = NAMES.map((t, i) =>
+      '<button class="tok-btn' + (i === sel ? ' on' : '') + '" data-i="' + i + '">' + t + '</button>'
+    ).join('');
+
+    inputEl.innerHTML = '<h4 style="margin:0 0 6px">输入 X（4 词 × 6 维）</h4>' +
+      mtable(X, NAMES, ['d₁', 'd₂', 'd₃', 'd₄', 'd₅', 'd₆'], sel, '');
+
+    weightsEl.innerHTML =
+      '<h4 style="margin:0 0 6px">三个可学习权重矩阵（6 × 3）</h4>' +
+      '<b style="font-size:13px">W^Q</b>' + mtable(WQ, ['d₁', 'd₂', 'd₃', 'd₄', 'd₅', 'd₆'], ['q₁', 'q₂', 'q₃'], -1, '') +
+      '<b style="font-size:13px">W^K</b>' + mtable(WK, ['d₁', 'd₂', 'd₃', 'd₄', 'd₅', 'd₆'], ['k₁', 'k₂', 'k₃'], -1, '') +
+      '<b style="font-size:13px">W^V</b>' + mtable(WV, ['d₁', 'd₂', 'd₃', 'd₄', 'd₅', 'd₆'], ['v₁', 'v₂', 'v₃'], -1, '');
+
+    outputEl.innerHTML = '<h4 style="margin:10px 0 6px">投影结果：Q、K、V（4 × 3）</h4>' +
+      '<b style="font-size:13px">Q = X·W^Q</b>' + mtable(Q, NAMES, ['q₁', 'q₂', 'q₃'], sel, '') +
+      '<b style="font-size:13px">K = X·W^K</b>' + mtable(K, NAMES, ['k₁', 'k₂', 'k₃'], sel, '') +
+      '<b style="font-size:13px">V = X·W^V</b>' + mtable(V, NAMES, ['v₁', 'v₂', 'v₃'], sel, '');
+
+    // 点积展开：以 Q 为例逐元素展示，K、V 同理给出结果向量
+    const x = X[sel];
+    const q = Q[sel];
+    const k = K[sel];
+    const v = V[sel];
+    const expand = (W, out, name) =>
+      out.map((_, c) =>
+        name + '[' + (c + 1) + '] = ' +
+        x.map((xv, r) => xv + '×' + W[r][c]).join(' + ') + ' = ' + out[c]
+      ).join('，');
+    infoEl.innerHTML =
+      '<b>' + NAMES[sel] + ' = [' + x.join(', ') + ']</b> 分别投影为：<br>' +
+      '<b style="color:#6d28d9">q</b> = [' + q.join(', ') + ']：　' + expand(WQ, q, 'q') + '<br>' +
+      '<b style="color:#6d28d9">k</b> = [' + k.join(', ') + ']：　' + expand(WK, k, 'k') + '<br>' +
+      '<b style="color:#6d28d9">v</b> = [' + v.join(', ') + ']：　' + expand(WV, v, 'v') +
+      '<br><span style="color:var(--ink-faint)">注意：同一个词的 q、k、v 各不相同——因为三个权重矩阵不同。这就是「一词三角色」。</span>';
+  }
+
+  toksEl.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-i]');
+    if (!b) return;
+    sel = parseInt(b.dataset.i, 10);
+    render();
+  });
+  render();
+})();
+
+/* ============================================================
    页面 UI：导航高亮 + 回到顶部
    ============================================================ */
 (function () {
