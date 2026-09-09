@@ -379,8 +379,8 @@ function watchSize(canvas, redraw) {
 })();
 
 /* ============================================================
-   演示 5：代码逐步执行可视化（NumPy 注意力实现）
-   左边代码行高亮，右边矩阵面板逐步展示中间结果
+   演示 5：代码逐步执行可视化（追踪 PyTorch forward）
+   左边代码行高亮，右边矩阵面板逐步展示中间结果（以「头 1」为例）
    ============================================================ */
 (function () {
   const codeEl = document.getElementById('step-code');
@@ -390,28 +390,31 @@ function watchSize(canvas, redraw) {
   const autoBtn = document.getElementById('step-auto');
   const resetBtn = document.getElementById('step-reset');
 
-  // 展示用的代码（与 8.1 一致，带语法着色）
+  // 与 8.1 一致的 PyTorch forward 代码（带语法着色与行号）
   const CODE_LINES = [
-    '<span class="kw">import</span> numpy <span class="kw">as</span> np',
-    '<span class="kw">def</span> <span class="fnc">attention</span>(Q, K, V, mask=<span class="kw">None</span>):',
-    '    d_k = Q.shape[-<span class="num">1</span>]',
-    '    scores = Q @ K.transpose(-<span class="num">2</span>, -<span class="num">1</span>) / np.sqrt(d_k)',
+    '<span class="kw">def</span> <span class="fnc">forward</span>(self, x, mask=<span class="kw">None</span>):',
+    '    B, T, _ = x.shape',
+    '    Q = self.Wq(x).view(B, T, self.n_heads, self.d_k).transpose(<span class="num">1</span>, <span class="num">2</span>)',
+    '    K = self.Wk(x).view(B, T, self.n_heads, self.d_k).transpose(<span class="num">1</span>, <span class="num">2</span>)',
+    '    V = self.Wv(x).view(B, T, self.n_heads, self.d_k).transpose(<span class="num">1</span>, <span class="num">2</span>)',
+    '    scores = Q @ K.transpose(-<span class="num">2</span>, -<span class="num">1</span>) / math.sqrt(self.d_k)',
     '    <span class="kw">if</span> mask <span class="kw">is not</span> <span class="kw">None</span>:',
-    '        scores = np.where(mask == <span class="num">0</span>, -<span class="num">1e9</span>, scores)',
-    '    exp_scores = np.exp(scores - scores.max(axis=-<span class="num">1</span>, keepdims=<span class="kw">True</span>))',
-    '    attn_weights = exp_scores / exp_scores.sum(axis=-<span class="num">1</span>, keepdims=<span class="kw">True</span>)',
-    '    output = attn_weights @ V',
-    '    <span class="kw">return</span> output, attn_weights',
+    '        scores = scores.masked_fill(mask == <span class="num">0</span>, float(<span class="str">\'-inf\'</span>))',
+    '    attn = scores.softmax(dim=-<span class="num">1</span>)',
+    '    out = attn @ V',
+    '    out = out.transpose(<span class="num">1</span>, <span class="num">2</span>).contiguous().view(B, T, -<span class="num">1</span>)',
+    '    <span class="kw">return</span> self.Wo(out), attn',
   ];
 
-  // 迷你数据：d_k=3，3 个查询、4 个键值
-  const Q = [[1, 0, 1], [0, 1, 1], [1, 1, 0]];
+  // 迷你数据：B=1, T=4, d_model=6, n_heads=2 → d_k=3（演示「头 1」的运算）
+  const x = [[1, 0, 1, 0, 1, 0], [0, 1, 1, 0, 0, 1], [1, 1, 0, 1, 0, 0], [0, 0, 1, 1, 1, 0]];
+  // 头 1 投影后的 Q、K、V（这里直接给出 Wq/Wk/Wv 投影后的结果，省略具体权重）
+  const Q = [[1, 0, 1], [0, 1, 1], [1, 1, 0], [0, 0, 1]];
   const K = [[1, 0, 1], [0, 1, 0], [1, 1, 1], [0, 0, 1]];
-  const V = [[1, 2], [0, 1], [1, 0], [2, 3]];
+  const V = [[1, 2, 0], [0, 1, 1], [1, 0, 1], [2, 3, 1]];
   const DK = Math.sqrt(3);
 
-  // 预计算各步骤的中间结果
-  const raw = Q.map((q) => K.map((k) => q.reduce((s, qv, i) => s + qv * k[i], 0)));
+  const raw = Q.map((q) => K.map((k) => q.reduce((s2, qv, i2) => s2 + qv * k[i2], 0)));
   const scaled = raw.map((row) => row.map((v) => v / DK));
   const weights = scaled.map((row) => {
     const m = Math.max(...row);
@@ -420,19 +423,18 @@ function watchSize(canvas, redraw) {
     return exps.map((e) => e / sum);
   });
   const out = weights.map((wrow) =>
-    V[0].map((_, c) => wrow.reduce((s, wv, r) => s + wv * V[r][c], 0))
+    V[0].map((_, c) => wrow.reduce((s2, wv, r) => s2 + wv * V[r][c], 0))
   );
 
-  // 矩阵渲染助手：data 二维数组，行/列标签，可指定每行最大值的着色
   function mtable(data, rlabs, clabs, markMax) {
     let html = '<table class="mtable"><tr><td class="mlab"></td>' +
       clabs.map((c) => '<td class="mtop">' + c + '</td>').join('') + '</tr>';
     data.forEach((row, i) => {
       const mx = markMax ? row.indexOf(Math.max(...row)) : -1;
       html += '<tr><td class="mlab">' + rlabs[i] + '</td>' +
-        row.map((v, j) => {
+        row.map((v, j2) => {
           let cls = '';
-          if (markMax && j === mx) cls = ' class="mx"';
+          if (markMax && j2 === mx) cls = ' class="mx"';
           else if (markMax && v > 1) cls = ' class="hot"';
           const shown = markMax ? fmt(v, 3) : fmt(v, 2);
           return '<td' + cls + '>' + shown + '</td>';
@@ -441,53 +443,64 @@ function watchSize(canvas, redraw) {
     return html + '</table>';
   }
 
-  // 7 个步骤：每步高亮的代码行 + 右侧面板内容
+  // 步骤：高亮的代码行（从 0 数起）+ 右侧面板
   const STEPS = [
     {
-      title: '第 0 步 · 输入：Q、K、V（形状）',
+      title: '第 0 步 · 输入 x：(B=1, T=4, d_model=6)',
       lines: [],
-      desc: 'Q: (n_q=3, d_k=3) 三个查询向量；K: (n_k=4, d_k=3) 四个键；V: (n_k=4, d_v=2) 四个值（2 维）。注意 K 和 V 的行数相同——每个键配一个值。',
-      html: '<b>Q（查询）</b>' + mtable(Q, ['q₁', 'q₂', 'q₃'], ['d₁', 'd₂', 'd₃'], false) +
-        '<b>K（键）</b>' + mtable(K, ['k₁', 'k₂', 'k₃', 'k₄'], ['d₁', 'd₂', 'd₃'], false) +
-        '<b>V（值）</b>' + mtable(V, ['k₁', 'k₂', 'k₃', 'k₄'], ['dᵥ₁', 'dᵥ₂'], false),
+      desc: '输入是 4 个词、每个词 6 维的词向量表。模型配置：<b>d_model=6，n_heads=2</b> → 每个头分到 <b>d_k = 6÷2 = 3</b> 维。下面全程演示「头 1」的运算（头 2 并行做同样的事）。',
+      html: '<b>输入 x（4×6）</b>' + mtable(x, ['词1', '词2', '词3', '词4'], ['d₁', 'd₂', 'd₃', 'd₄', 'd₅', 'd₆'], false),
     },
     {
-      title: '第 1 步 · d_k = Q.shape[-1]',
-      lines: [2],
-      desc: '取 Q 最后一维 = 每个向量的维度。本演示 d_k = <b>3</b>，缩放因子为 √3 ≈ 1.732。',
-      html: '<b>d_k = 3</b>，缩放因子 √d_k = √3 ≈ <b>1.732</b>',
+      title: '第 1 步 · B, T, _ = x.shape',
+      lines: [1],
+      desc: '解包形状：<b>B=1</b>（1 句话）、<b>T=4</b>（4 个词）、最后一个维度 6 忽略。',
+      html: '<b>B = 1，T = 4</b>（d_model = 6）',
     },
     {
-      title: '第 2 步 · scores = Q·Kᵀ（打分）',
-      lines: [3],
-      desc: '每个查询与每个键做点积：第 i 行第 j 列 = qᵢ·kⱼ（语义相似度）。紫色 = 每行最高分——注意 q₁ 最「喜欢」k₃、q₃ 最「喜欢」k₃。',
-      html: '<b>原始分数 QKᵀ（3×4）</b>' + mtable(raw, ['q₁', 'q₂', 'q₃'], ['k₁', 'k₂', 'k₃', 'k₄'], true),
+      title: '第 2 步 · 投影并切成多头',
+      lines: [2, 3, 4],
+      desc: 'Wq/Wk/Wv 把 x 从 6 维投影到 6 维，再 <b>view(B,T,2,3)</b> 切成两个头、<b>transpose(1,2)</b> 把头的维度挪到前面 → (1, <b>2</b>, 4, 3)。下面展示「头 1」拿到的 Q、K、V（各 4×3）。',
+      html: '<b>头 1 的 Q（4×3）</b>' + mtable(Q, ['词1', '词2', '词3', '词4'], ['d₁', 'd₂', 'd₃'], false) +
+        '<b>头 1 的 K（4×3）</b>' + mtable(K, ['词1', '词2', '词3', '词4'], ['d₁', 'd₂', 'd₃'], false) +
+        '<b>头 1 的 V（4×3）</b>' + mtable(V, ['词1', '词2', '词3', '词4'], ['d₁', 'd₂', 'd₃'], false),
     },
     {
-      title: '第 3 步 · 除以 √d_k（缩放）',
-      lines: [3],
-      desc: '同一行代码的第二步：所有分数 ÷ √3。数值整体变小、彼此差距被压缩——防止大维度下 Softmax 饱和。',
-      html: '<b>缩放后分数（÷√3）</b>' + mtable(scaled, ['q₁', 'q₂', 'q₃'], ['k₁', 'k₂', 'k₃', 'k₄'], true),
+      title: '第 3 步 · scores = Q·Kᵀ（原始分数）',
+      lines: [5],
+      desc: '每个词（查询）与每个词（键）点积：第 i 行第 j 列 = qᵢ·kⱼ。紫色 = 每行最高分——「词1」最关注「词3」，「词2/词3」也最关注「词3」。',
+      html: '<b>原始分数 QKᵀ（4×4）</b>' + mtable(raw, ['词1', '词2', '词3', '词4'], ['词1', '词2', '词3', '词4'], true),
     },
     {
-      title: '第 4 步 · mask 判断',
-      lines: [4, 5],
-      desc: '本演示没有掩码，<b>直接跳过</b>这两行。真实场景：把被禁止位置的分数设为 −1e9（≈ −∞），Softmax 后权重精确为 0（见第 6 章演示 4）。',
+      title: '第 4 步 · ÷√d_k（缩放）',
+      lines: [5],
+      desc: '同一行代码的第二半：所有分数 ÷ √3。数值整体变小、差距被压缩——防止 Softmax 饱和。',
+      html: '<b>缩放后分数（÷√3）</b>' + mtable(scaled, ['词1', '词2', '词3', '词4'], ['词1', '词2', '词3', '词4'], true),
+    },
+    {
+      title: '第 5 步 · mask 判断',
+      lines: [6, 7],
+      desc: '本演示没有掩码，<b>跳过</b>这两行。真实场景：masked_fill 把被禁止位置（mask==0）填成 −inf，Softmax 后权重精确为 0（见第 6 章演示 4）。',
       html: '<b>mask = None → 跳过 if 分支</b>',
     },
     {
-      title: '第 5 步 · Softmax 归一化',
-      lines: [6, 7],
-      desc: '每行先减最大值（数值稳定，结果不变），再 exp、再除以行和。结果：<b>每行都是和为 1 的概率分布</b>——「看哪里、看多重」。',
-      html: '<b>注意力权重（每行和 = 1）</b>' + mtable(weights, ['q₁', 'q₂', 'q₃'], ['k₁', 'k₂', 'k₃', 'k₄'], true) +
-        '<p style="font-size:12.5px;color:var(--ink-faint);margin-top:6px">例：q₁ 把 45.6% 的注意力给了 k₃。</p>',
+      title: '第 6 步 · Softmax 归一化',
+      lines: [8],
+      desc: '每行变成和为 1 的概率分布——「词1 看词3 多重、看词4 多重」全部写进这一行。PyTorch 的 softmax 内部已做「减 max」数值稳定。',
+      html: '<b>注意力权重（每行和 = 1）</b>' + mtable(weights, ['词1', '词2', '词3', '词4'], ['词1', '词2', '词3', '词4'], true),
     },
     {
-      title: '第 6 步 · output = attn·V（加权求和）',
-      lines: [8, 9],
-      desc: '输出的第 i 行 = 所有值向量按第 i 行权重混合。例如 output[0] = 0.256·v₁ + 0.144·v₂ + 0.456·v₃ + 0.144·v₄。每个输出向量已经「融合」了它最关心的那些词的信息——这就是注意力之后的词表示。',
-      html: '<b>输出（3×2，新表示）</b>' + mtable(out, ['out₁', 'out₂', 'out₃'], ['dᵥ₁', 'dᵥ₂'], false) +
-        '<p style="font-size:12.5px;color:var(--ink-faint);margin-top:6px">output[0] = 0.256×(1,2) + 0.144×(0,1) + 0.456×(1,0) + 0.144×(2,3) = (' + fmt(out[0][0], 3) + ', ' + fmt(out[0][1], 3) + ')</p>',
+      title: '第 7 步 · out = attn·V（加权求和）',
+      lines: [9],
+      desc: '输出的第 i 行 = 所有值向量按第 i 行权重混合：out[0] = 0.256·v₁ + 0.144·v₂ + 0.456·v₃ + 0.144·v₄。每个词的表示已经「融合」了它最关心的那些词的信息。',
+      html: '<b>头 1 的输出（4×3）</b>' + mtable(out, ['词1', '词2', '词3', '词4'], ['d₁', 'd₂', 'd₃'], false) +
+        '<p style="font-size:12.5px;color:var(--ink-faint);margin-top:6px">out[0] = 0.256×(1,2,0) + 0.144×(0,1,1) + 0.456×(1,0,1) + 0.144×(2,3,1) = (' + fmt(out[0][0], 3) + ', ' + fmt(out[0][1], 3) + ', ' + fmt(out[0][2], 3) + ')</p>',
+    },
+    {
+      title: '第 8 步 · 拼回多头并投影输出',
+      lines: [10, 11],
+      desc: 'transpose(1,2) 把头维度挪回去、contiguous() 整理内存、view 拼成 (B, T, 6)（头 1 的 3 维 + 头 2 的 3 维接在一起）；最后 Wᴼ 投影一次并返回输出和注意力权重。',
+      html: '<b>(1, 2, 4, 3) → (1, 4, 6)</b><br><span style="font-size:13.5px;color:var(--ink-soft)">头 1 与头 2 的输出沿最后一维拼接，再过 Wᴼ 投影 → 最终 (1, 4, 6)，与输入形状一致（可继续堆叠下一层）。</span>',
     },
   ];
 
@@ -496,7 +509,6 @@ function watchSize(canvas, redraw) {
 
   function render() {
     const s = STEPS[step];
-    // 代码行：高亮当前步骤涉及的行，其余淡化
     codeEl.innerHTML = CODE_LINES.map((ln, i) =>
       '<span class="ln' + (s.lines.includes(i) ? ' hl' : ' dim') + '">' + ln + '</span>'
     ).join('');
@@ -523,7 +535,7 @@ function watchSize(canvas, redraw) {
       step++;
       render();
       if (step >= STEPS.length - 1) stopAuto();
-    }, 2200);
+    }, 2400);
     render();
   });
 

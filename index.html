@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>注意力机制 · 互动可视化 + 面试手撕代码</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -271,45 +271,10 @@
     <h2><span class="chapter-no">8</span>面试手撕代码</h2>
     <p class="chapter-sub">Implement Attention from Scratch</p>
 
-    <p>面试官最爱让候选人手写「缩放点积注意力」甚至完整的多头注意力。<strong>写作顺序建议</strong>：① 先口述公式 Attention(Q,K,V)=softmax(QKᵀ/√d_k)V；② 讲清四个关键细节（缩放、Softmax、数值稳定、mask）；③ 再动手写代码。</p>
+    <p>面试官最爱让候选人手写「缩放点积注意力」甚至完整的多头注意力。<strong>写作顺序建议</strong>：① 先口述公式 Attention(Q,K,V)=softmax(QKᵀ/√d_k)V；② 讲清四个关键细节（缩放、Softmax、数值稳定、mask）；③ 再动手写代码。下面代码全部用 <strong>PyTorch</strong>。</p>
 
-    <h3>8.1 NumPy 版：缩放点积注意力</h3>
-    <div class="code"><span class="cm"># 手撕 1：缩放点积注意力（NumPy 版）</span>
-<span class="kw">import</span> numpy <span class="kw">as</span> np
-
-<span class="kw">def</span> <span class="fnc">attention</span>(Q, K, V, mask=None):
-    <span class="cm"># Q: (n_q, d_k)  K: (n_k, d_k)  V: (n_k, d_v)  输出: (n_q, d_v)</span>
-    d_k = Q.shape[-<span class="num">1</span>]
-    <span class="cm"># ① 打分：Q 与 K 点积（transpose(-2,-1) 把 K 转置）</span>
-    scores = Q @ K.transpose(-<span class="num">2</span>, -<span class="num">1</span>) / np.sqrt(d_k)
-    <span class="cm"># ② mask：被禁止位置置 -1e9（≈ -inf），Softmax 后权重为 0</span>
-    <span class="kw">if</span> mask <span class="kw">is not</span> <span class="kw">None</span>:
-        scores = np.where(mask == <span class="num">0</span>, -<span class="num">1e9</span>, scores)
-    <span class="cm"># ③ Softmax（减去每行最大值，防止 e^x 溢出——数值稳定技巧）</span>
-    exp_scores = np.exp(scores - scores.max(axis=-<span class="num">1</span>, keepdims=<span class="kw">True</span>))
-    attn_weights = exp_scores / exp_scores.sum(axis=-<span class="num">1</span>, keepdims=<span class="kw">True</span>)
-    <span class="cm"># ④ 加权求和</span>
-    output = attn_weights @ V
-    <span class="kw">return</span> output, attn_weights</div>
-
-    <h3>8.1+ 跟着代码走一遍：逐步执行演示</h3>
-    <div class="demo">
-      <p class="demo-title">演示 5 · 代码逐步执行可视化</p>
-      <p class="demo-tip">用一组迷你矩阵（d_k=3，3 个查询、4 个键值）真实跑一遍 NumPy 代码。点「下一步」，左边高亮当前执行的代码行，右边同步显示该步骤算出的矩阵和解释——每行代码做什么、结果是什么，一目了然。</p>
-      <div class="step-grid">
-        <div class="code-lines" id="step-code"></div>
-        <div class="step-panel" id="step-panel"></div>
-      </div>
-      <div class="controls">
-        <button class="btn" id="step-prev">上一步</button>
-        <button class="btn primary" id="step-next">下一步</button>
-        <button class="btn" id="step-auto">自动播放</button>
-        <button class="btn" id="step-reset">重置</button>
-      </div>
-    </div>
-
-    <h3>8.2 PyTorch 版：完整多头注意力</h3>
-    <div class="code"><span class="cm"># 手撕 2：多头注意力（PyTorch 版，面试常考）</span>
+    <h3>8.1 PyTorch 版：完整多头注意力</h3>
+    <div class="code"><span class="cm"># 手撕：多头注意力（PyTorch 版，面试常考）</span>
 <span class="kw">import</span> torch
 <span class="kw">import</span> torch.nn <span class="kw">as</span> nn
 <span class="kw">import</span> math
@@ -342,21 +307,38 @@
         out = out.transpose(<span class="num">1</span>, <span class="num">2</span>).contiguous().view(B, T, -<span class="num">1</span>)
         <span class="kw">return</span> self.Wo(out), attn</div>
 
-    <h3>8.3 因果掩码（GPT 自回归生成）</h3>
-    <div class="code"><span class="cm"># 手撕 3：因果掩码 —— 下三角矩阵，第 i 个词只能看 0..i</span>
+    <h3>8.2 跟着代码走一遍：逐步执行演示</h3>
+    <div class="demo">
+      <p class="demo-title">演示 5 · 代码逐步执行可视化（追踪 PyTorch forward）</p>
+      <p class="demo-tip">用迷你数据（4 个词、d_model=6、2 个头 → 每个头 d_k=3）真实走一遍上面 forward 的每一行。点「下一步」，左边高亮正在执行的代码行，右边同步显示该步骤算出的矩阵（以「头 1」为例展示）——每行代码做什么、结果是什么，一目了然。</p>
+      <div class="step-grid">
+        <div class="code-lines" id="step-code"></div>
+        <div class="step-panel" id="step-panel"></div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="step-prev">上一步</button>
+        <button class="btn primary" id="step-next">下一步</button>
+        <button class="btn" id="step-auto">自动播放</button>
+        <button class="btn" id="step-reset">重置</button>
+      </div>
+    </div>
+
+    <h3>8.3 因果掩码（PyTorch，GPT 自回归生成）</h3>
+    <div class="code"><span class="cm"># 手撕补充：因果掩码 —— 下三角矩阵，第 i 个词只能看 0..i</span>
 seq_len = <span class="num">5</span>
-mask = np.tril(np.ones((seq_len, seq_len)))   <span class="cm"># 下三角为 1，上三角为 0</span>
-<span class="cm"># [[1, 0, 0, 0, 0],</span>
-<span class="cm">#  [1, 1, 0, 0, 0],</span>
-<span class="cm">#  [1, 1, 1, 0, 0], ...]</span></div>
+mask = torch.tril(torch.ones(seq_len, seq_len))   <span class="cm"># 下三角为 1，上三角为 0</span>
+<span class="cm"># tensor([[1., 0., 0., 0., 0.],</span>
+<span class="cm">#         [1., 1., 0., 0., 0.],</span>
+<span class="cm">#         [1., 1., 1., 0., 0.], ...])</span>
+<span class="cm"># 使用：scores = scores.masked_fill(mask == 0, float('-inf'))</span></div>
 
     <h3>8.4 复杂度速算</h3>
     <p>注意力权重矩阵是 n×n，每个元素一次点积 O(d) → <strong>总复杂度 O(n²·d)</strong>。序列长度 n 翻倍，计算量翻四倍——这就是「长上下文贵」的根源，也是 FlashAttention、稀疏注意力、线性注意力诞生的原因。</p>
 
     <div class="takeaway"><span class="tag">本节小结</span>
       <ul>
-        <li>手撕三件套：注意力（NumPy）、多头（PyTorch）、因果掩码（tril）。</li>
-        <li>四个必须写出来的细节：÷√d_k、mask 加 −inf、softmax 减 max、维度变换。</li>
+        <li>手撕主体：PyTorch 多头注意力；补充：torch.tril 因果掩码。</li>
+        <li>四个必须写出来的细节：÷√d_k、mask 加 −inf、softmax 减 max、view/transpose 维度变换。</li>
         <li>复杂度 O(n²d)，面试可能追问如何优化。</li>
       </ul>
     </div>
@@ -396,6 +378,6 @@ mask = np.tril(np.ones((seq_len, seq_len)))   <span class="cm"># 下三角为 1�
 <button class="to-top" id="toTop" title="回到顶部">&#8593;</button>
 <footer>注意力机制 · 互动可视化 + 面试手撕代码 · 本地网页无依赖</footer>
 
-<script src="demos.js"></script>
+<script src="demos.js?v=3"></script>
 </body>
 </html>
