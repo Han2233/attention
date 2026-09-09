@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>注意力机制 · 互动可视化 + 面试手撕代码</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="hero">
+  <h1>注意力机制 Attention</h1>
+  <p>从「加权平均」这个一句话直觉出发，用 4 个可交互的可视化搞懂 Q·K·V、Softmax、缩放、多头与掩码，最后附上面试手撕代码和追问清单。</p>
+  <div class="badges">
+    <span class="badge">4 个交互可视化</span>
+    <span class="badge">面试手撕代码</span>
+    <span class="badge">追问清单</span>
+    <span class="badge">零基础友好</span>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="nav-inner" id="topNav">
+    <a href="#s1">1 为什么需要注意力</a>
+    <a href="#s2">2 核心直觉</a>
+    <a href="#s3">3 公式拆解</a>
+    <a href="#s4">4 热力图实验室</a>
+    <a href="#s5">5 多头注意力</a>
+    <a href="#s6">6 掩码 Mask</a>
+    <a href="#s7">7 自注意力 vs 交叉注意力</a>
+    <a href="#s8">8 面试手撕代码</a>
+    <a href="#s9">9 面试追问清单</a>
+  </div>
+</nav>
+
+<div class="wrap">
+<main class="content">
+
+  <!-- ======================= 1 为什么需要注意力 ======================= -->
+  <section class="chapter" id="s1">
+    <h2><span class="chapter-no">1</span>为什么需要注意力</h2>
+    <p class="chapter-sub">Why Attention</p>
+
+    <p>先看翻译任务：把英文 <em>"The cat sat on the mat"</em> 翻译成中文「猫 坐 在 垫子 上」。老式的 Seq2Seq 模型把整句英文压缩成一个<strong>固定长度向量</strong>，再从这个向量逐词生成译文——句子一长，「压缩向量」就装不下了，就像把一本 500 页的书硬塞进一张小纸条。</p>
+    <p>人类翻译时不是这样：<strong>每写一个词，眼睛只回头看相关的原文位置</strong>——写「猫」时看 "cat"，写「坐」时看 "sat"。注意力机制把这个直觉做成数学：<strong>让模型为每个输出位置动态决定「看哪些输入位置、各看多重」</strong>。</p>
+
+    <table class="tb">
+      <tr><th>输出词（中文）</th><th>最该看的英文位置</th></tr>
+      <tr><td>猫</td><td><b>cat</b>（其余基本不看）</td></tr>
+      <tr><td>坐</td><td><b>sat</b></td></tr>
+      <tr><td>在</td><td><b>on</b></td></tr>
+      <tr><td>垫子</td><td><b>mat</b></td></tr>
+      <tr><td>上</td><td><b>on</b> + mat（「在…上」拆成两个词）</td></tr>
+    </table>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>Seq2Seq 的固定向量是瓶颈，长句子装不下。</li>
+        <li>注意力 = 动态对齐：每个输出位置有权重地「看」所有输入位置。</li>
+        <li>这些权重不是人设定的，而是<strong>从数据里学出来的</strong>。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ======================= 2 核心直觉 ======================= -->
+  <section class="chapter" id="s2">
+    <h2><span class="chapter-no">2</span>核心直觉：注意力就是加权平均</h2>
+    <p class="chapter-sub">Weighted Average</p>
+
+    <p>整个注意力机制可以用一句话概括：<strong>输出 = 所有「值」的加权平均，权重由「查询」和「键」的匹配程度决定</strong>。先忘掉 Transformer，用查字典的类比理解三个角色：</p>
+
+    <table class="tb">
+      <tr><th>角色</th><th>英文</th><th>字典类比</th><th>形状</th></tr>
+      <tr><td><b>查询</b></td><td><span class="en">Query</span> (Q)</td><td>我要查的单词（"apple" 的中文是什么？）</td><td>(n_q, d_k)</td></tr>
+      <tr><td><b>键</b></td><td><span class="en">Key</span> (K)</td><td>字典里每个词条的标题</td><td>(n_k, d_k)</td></tr>
+      <tr><td><b>值</b></td><td><span class="en">Value</span> (V)</td><td>每个词条的解释内容</td><td>(n_k, d_v)</td></tr>
+    </table>
+    <p>查询与所有键逐一「比对打分」（点积），分数经 Softmax 变成和为 1 的权重，再用权重把值加权求和——<strong>分数越高的值，对输出的贡献越大</strong>。</p>
+
+    <div class="analogy"><span class="tag">通俗理解</span>你去图书馆找资料：心里带着问题（Query），书架上有贴标签的档案盒（Key），盒子里装着内容（Value）。你扫一遍标签，觉得「机器学习」盒最相关（分数高），就主要抄它的内容、顺便翻两眼「深度学习」盒——最终笔记就是所有盒子的<strong>加权平均</strong>。</div>
+
+    <div class="demo">
+      <p class="demo-title">演示 1 · 加权平均直觉</p>
+      <p class="demo-tip">三个词各有自己的「值向量」（箭头）。拖动三个「匹配分数」滑杆，看 Softmax 后权重如何变化、最终输出（粗箭头）如何被拉向分数最高的那个词。分数是 0 时该词权重接近 0，对输出几乎无贡献。</p>
+      <canvas id="wa-canvas" style="height:300px"></canvas>
+      <div class="controls">
+        <div class="ctrl-group"><label>猫 的分数</label>
+          <input type="range" id="wa-s1" min="0" max="10" step="0.5" value="5">
+          <span class="val" id="wa-s1v">5</span></div>
+        <div class="ctrl-group"><label>狗 的分数</label>
+          <input type="range" id="wa-s2" min="0" max="10" step="0.5" value="4">
+          <span class="val" id="wa-s2v">4</span></div>
+        <div class="ctrl-group"><label>苹果 的分数</label>
+          <input type="range" id="wa-s3" min="0" max="10" step="0.5" value="1">
+          <span class="val" id="wa-s3v">1</span></div>
+      </div>
+      <div class="demo-info" id="wa-info"></div>
+    </div>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>Q 提问、K 对照、V 取值——输出是 V 的加权平均。</li>
+        <li>权重 = Softmax(分数)，分数 = Q·K 的点积相似度。</li>
+        <li>「注意力」学的东西就是：什么查询该给什么键打高分。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ======================= 3 公式拆解 ======================= -->
+  <section class="chapter" id="s3">
+    <h2><span class="chapter-no">3</span>公式拆解：四步走</h2>
+    <p class="chapter-sub">Scaled Dot-Product Attention</p>
+
+    <div class="formula">
+      <span class="fn">注意力（Attention Is All You Need 的原始公式）：</span>
+      Attention(<i>Q</i>, <i>K</i>, <i>V</i>) = softmax( <span class="frac"><span class="num"><i>QK</i><sup>T</sup></span><span class="den">&#8730;<i>d<sub>k</sub></i></span></span> ) · <i>V</i>
+    </div>
+
+    <table class="tb">
+      <tr><th>步骤</th><th>运算</th><th>形状</th><th>含义</th></tr>
+      <tr><td>① 打分</td><td>S = QK<sup>T</sup></td><td>(n_q, n_k)</td><td>每个查询与每个键做<strong>点积</strong>（向量相似度），得到分数矩阵</td></tr>
+      <tr><td>② 缩放</td><td>S / &#8730;d_k</td><td>(n_q, n_k)</td><td>除以维度的平方根，防止分数过大（见下方追问 1）</td></tr>
+      <tr><td>③ 归一</td><td>softmax（按行）</td><td>(n_q, n_k)</td><td>每行变成<strong>非负、和为 1</strong>的概率分布——「看哪里、看多重」</td></tr>
+      <tr><td>④ 加权求和</td><td>A · V</td><td>(n_q, d_v)</td><td>按权重把值向量加起来，得到输出</td></tr>
+    </table>
+
+    <div class="formula">
+      <span class="fn">Softmax（按行作用）：</span>
+      softmax(z)<sub>i</sub> = <span class="frac"><span class="num">e<sup>z<sub>i</sub></sup></span><span class="den"><span class="sigma"><span class="slim"><span>n</span><span>j=1</span></span><span class="sg">Σ</span></span> e<sup>z<sub>j</sub></sup></span></span>
+    </div>
+
+    <div class="think"><span class="tag">为什么是点积</span>两个向量的点积 = 长度 × 夹角余弦，天然衡量「方向有多一致」。词向量语义越接近，点积越大——所以 Q·K 可以理解为「查询和键在语义空间里有多像」。</div>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>四步：点积打分 → 除以 √d_k → Softmax 归一 → 加权求和。</li>
+        <li>只涉及矩阵乘法和指数运算——所以「Attention 全部并行、计算高效」。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ======================= 4 热力图实验室 ======================= -->
+  <section class="chapter" id="s4">
+    <h2><span class="chapter-no">4</span>热力图实验室：看模型「在看哪里」</h2>
+    <p class="chapter-sub">Attention Heatmap Lab</p>
+
+    <p>经典例句（BERT 论文用过的例子）：<em>"The animal didn't cross the street because <b>it</b> was too tired"</em>——这里的 "it" 指谁？热力图会告诉你模型认为它指 "animal"。</p>
+
+    <div class="demo">
+      <p class="demo-title">演示 2 · 注意力热力图</p>
+      <p class="demo-tip">行 = 查询词，列 = 被看的词。点击任意一行（或下方词条），该行的注意力权重会着色显示，下方同步给出「打分 → 缩放 → Softmax」的完整计算过程。拖动 d_k 滑杆感受缩放因子的作用；关掉缩放，看 Softmax 如何「饱和」成一个尖峰。</p>
+      <div class="controls">
+        <div class="ctrl-group"><label>维度 d_k</label>
+          <input type="range" id="att-dk" min="1" max="64" step="1" value="16">
+          <span class="val" id="att-dk-val">16</span></div>
+        <div class="ctrl-group"><label><input type="checkbox" id="att-scale" checked> 应用缩放 √d_k</label></div>
+      </div>
+      <div class="att-wrap" id="att-grid"></div>
+      <div class="tok-row" id="att-toks"></div>
+      <div class="demo-info" id="att-info">点击表格任意一行查看计算过程</div>
+    </div>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>热力图每行是一个概率分布（和为 1）。</li>
+        <li>「it」把权重集中在 "animal" 上 = 模型解决了指代问题。</li>
+        <li>关闭缩放 → 高分词吃掉全部权重（Softmax 饱和），这就是要除以 √d_k 的原因。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ======================= 5 多头注意力 ======================= -->
+  <section class="chapter" id="s5">
+    <h2><span class="chapter-no">5</span>多头注意力：让多个头「各看各的」</h2>
+    <p class="chapter-sub">Multi-Head Attention</p>
+
+    <p>一个注意力只能学到一种「看」的模式。多头（<span class="en">Multi-Head</span>）把 Q、K、V 分别投影到 h 个子空间，每个头独立做注意力，最后拼接起来再投影：</p>
+    <div class="formula">
+      <span class="fn">多头注意力：</span>
+      MultiHead(<i>Q</i>,<i>K</i>,<i>V</i>) = Concat(head₁, …, head<sub>h</sub>)·<i>W<sup>O</sup></i>
+      &nbsp;&nbsp;其中 head<sub>i</sub> = Attention(<i>QW<sub>i</sub><sup>Q</sup></i>, <i>KW<sub>i</sub><sup>K</sup></i>, <i>VW<sub>i</sub><sup>V</sup></i>)
+    </div>
+    <p>直觉：像多个专家同时从不同角度读同一句话——<strong>有的头管语法相邻关系，有的头管代词指代，有的头管主谓搭配</strong>。最终把大家的意见拼起来综合。</p>
+
+    <div class="demo">
+      <p class="demo-title">演示 3 · 双头对比：同一个词，两个头看的位置完全不同</p>
+      <p class="demo-tip">点击一个词，看「头 1（语法头，关注相邻词）」和「头 2（指代头，关注远距离呼应）」的权重分布差异。两个头并行独立计算，互不影响。</p>
+      <div class="tok-row" id="mh-toks"></div>
+      <div id="mh-panel">
+        <h4 style="margin:10px 0 4px">Head 1 · 语法头（Syntax Head）</h4>
+        <div id="mh-head1"></div>
+        <h4 style="margin:14px 0 4px">Head 2 · 指代头（Reference Head）</h4>
+        <div id="mh-head2"></div>
+      </div>
+      <div class="demo-info" id="mh-info">点击上方词条查看两个头的差异</div>
+    </div>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>多头 = 多个子空间各自做注意力，再拼接投影。</li>
+        <li>每个头学到不同关系：语法、指代、位置……</li>
+        <li>总参数量不变（每个头维度 d_k = d_model / h）。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ======================= 6 掩码 ======================= -->
+  <section class="chapter" id="s6">
+    <h2><span class="chapter-no">6</span>掩码 Mask：让模型「不许偷看」</h2>
+    <p class="chapter-sub">Padding Mask & Causal Mask</p>
+
+    <p>两种常见掩码：</p>
+    <table class="tb">
+      <tr><th>掩码</th><th>英文</th><th>作用</th><th>用法</th></tr>
+      <tr><td>填充掩码</td><td><span class="en">Padding Mask</span></td><td>屏蔽 &lt;pad&gt; 占位符（batch 内句子长短不一）</td><td>把 pad 位置的分数设为 −∞</td></tr>
+      <tr><td>因果掩码</td><td><span class="en">Causal Mask</span></td><td>解码器自回归生成时，每个词<strong>只能看到自己及左边</strong>的词——不然就「作弊」看到未来答案了</td><td>上三角分数设为 −∞</td></tr>
+    </table>
+    <p>实现手法统一：<strong>把被禁止位置的分数设成 −∞，Softmax(e^(−∞)) = 0</strong>，权重自然归零。</p>
+
+    <div class="demo">
+      <p class="demo-title">演示 4 · 因果掩码（GPT 生成式注意力）</p>
+      <p class="demo-tip">句子 "I love cyber security"。勾选「应用因果掩码」前后对比：没有掩码时每个词都看全句（双向，BERT 模式）；加上掩码后每个词只能看自己和左边的词（GPT 模式）。注意第一行只剩自己一个词，权重 100%。</p>
+      <div class="controls">
+        <div class="ctrl-group"><label><input type="checkbox" id="mask-on" checked> 应用因果掩码（下三角）</label></div>
+      </div>
+      <div class="att-wrap" id="mask-grid"></div>
+      <div class="demo-info" id="mask-info"></div>
+    </div>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>掩码 = 把禁止位置的分数设为 −∞，Softmax 后权重为 0。</li>
+        <li>因果掩码 = 下三角矩阵，保证「只看过去、不看未来」。</li>
+        <li>面试必问：mask 怎么实现——一句话「加 −inf」。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ======================= 7 自注意力 vs 交叉注意力 ======================= -->
+  <section class="chapter" id="s7">
+    <h2><span class="chapter-no">7</span>自注意力 vs 交叉注意力</h2>
+    <p class="chapter-sub">Self-Attention & Cross-Attention</p>
+
+    <table class="tb">
+      <tr><th></th><th>自注意力 Self-Attention</th><th>交叉注意力 Cross-Attention</th></tr>
+      <tr><td>Q、K、V 来源</td><td><b>同一序列</b>（Q=K=V 同源，各配投影矩阵）</td><td>Q 来自<strong>解码器</strong>，K、V 来自<strong>编码器</strong></td></tr>
+      <tr><td>作用</td><td>句子内部词与词建立关系（解决指代、依赖）</td><td>输出端「回头看」输入端（翻译时的对齐）</td></tr>
+      <tr><td>典型用例</td><td>BERT 的双向自注意力、GPT 的因果自注意力</td><td>Transformer 解码器的 encoder-decoder 层</td></tr>
+      <tr><td>复杂度</td><td colspan="2">都是 O(n²·d)：n 个查询 × n 个键各算一次点积——长序列的天花板</td></tr>
+    </table>
+
+    <div class="pipeline" style="display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:16px 0">
+      <div class="pipe-step" style="background:var(--primary-soft);border:1px solid #ddd6fe;border-radius:10px;padding:10px 14px;font-size:14px;text-align:center"><b>编码器</b>N 层自注意力<br>（双向，看全句）</div>
+      <div class="pipe-arrow" style="display:flex;align-items:center;padding:0 8px;color:var(--ink-faint);font-size:20px">&#8594;</div>
+      <div class="pipe-step" style="background:var(--primary-soft);border:1px solid #ddd6fe;border-radius:10px;padding:10px 14px;font-size:14px;text-align:center"><b>解码器</b>因果自注意力<br>（只看左边）</div>
+      <div class="pipe-arrow" style="display:flex;align-items:center;padding:0 8px;color:var(--ink-faint);font-size:20px">&#8594;</div>
+      <div class="pipe-step" style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:10px 14px;font-size:14px;text-align:center"><b>交叉注意力</b><br>Q←解码器 K,V←编码器</div>
+    </div>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>同源 = 自注意力；Q 与 K/V 异源 = 交叉注意力。</li>
+        <li>双向（BERT）与因果（GPT）的区别就是「加不加下三角掩码」。</li>
+        <li>面试高频：一句话说清两者区别。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ======================= 8 面试手撕代码 ======================= -->
+  <section class="chapter" id="s8">
+    <h2><span class="chapter-no">8</span>面试手撕代码</h2>
+    <p class="chapter-sub">Implement Attention from Scratch</p>
+
+    <p>面试官最爱让候选人手写「缩放点积注意力」甚至完整的多头注意力。<strong>写作顺序建议</strong>：① 先口述公式 Attention(Q,K,V)=softmax(QKᵀ/√d_k)V；② 讲清四个关键细节（缩放、Softmax、数值稳定、mask）；③ 再动手写代码。</p>
+
+    <h3>8.1 NumPy 版：缩放点积注意力</h3>
+    <div class="code"><span class="cm"># 手撕 1：缩放点积注意力（NumPy 版）</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">def</span> <span class="fnc">attention</span>(Q, K, V, mask=None):
+    <span class="cm"># Q: (n_q, d_k)  K: (n_k, d_k)  V: (n_k, d_v)  输出: (n_q, d_v)</span>
+    d_k = Q.shape[-<span class="num">1</span>]
+    <span class="cm"># ① 打分：Q 与 K 点积（transpose(-2,-1) 把 K 转置）</span>
+    scores = Q @ K.transpose(-<span class="num">2</span>, -<span class="num">1</span>) / np.sqrt(d_k)
+    <span class="cm"># ② mask：被禁止位置置 -1e9（≈ -inf），Softmax 后权重为 0</span>
+    <span class="kw">if</span> mask <span class="kw">is not</span> <span class="kw">None</span>:
+        scores = np.where(mask == <span class="num">0</span>, -<span class="num">1e9</span>, scores)
+    <span class="cm"># ③ Softmax（减去每行最大值，防止 e^x 溢出——数值稳定技巧）</span>
+    exp_scores = np.exp(scores - scores.max(axis=-<span class="num">1</span>, keepdims=<span class="kw">True</span>))
+    attn_weights = exp_scores / exp_scores.sum(axis=-<span class="num">1</span>, keepdims=<span class="kw">True</span>)
+    <span class="cm"># ④ 加权求和</span>
+    output = attn_weights @ V
+    <span class="kw">return</span> output, attn_weights</div>
+
+    <h3>8.2 PyTorch 版：完整多头注意力</h3>
+    <div class="code"><span class="cm"># 手撕 2：多头注意力（PyTorch 版，面试常考）</span>
+<span class="kw">import</span> torch
+<span class="kw">import</span> torch.nn <span class="kw">as</span> nn
+<span class="kw">import</span> math
+
+<span class="kw">class</span> <span class="fnc">MultiHeadAttention</span>(nn.Module):
+    <span class="kw">def</span> <span class="fnc">__init__</span>(self, d_model, n_heads):
+        super().__init__()
+        <span class="kw">assert</span> d_model % n_heads == <span class="num">0</span>
+        self.d_k = d_model // n_heads      <span class="cm"># 每个头的维度</span>
+        self.n_heads = n_heads
+        <span class="cm"># 四个投影矩阵（也可合并成一个 Linear(d_model, 3*d_model)）</span>
+        self.Wq = nn.Linear(d_model, d_model)
+        self.Wk = nn.Linear(d_model, d_model)
+        self.Wv = nn.Linear(d_model, d_model)
+        self.Wo = nn.Linear(d_model, d_model)   <span class="cm"># 拼接后的输出投影</span>
+
+    <span class="kw">def</span> <span class="fnc">forward</span>(self, x, mask=None):
+        B, T, _ = x.shape                    <span class="cm"># batch, 序列长, 维度</span>
+        <span class="cm"># 投影并切成多头：(B, T, d_model) -> (B, n_heads, T, d_k)</span>
+        Q = self.Wq(x).view(B, T, self.n_heads, self.d_k).transpose(<span class="num">1</span>, <span class="num">2</span>)
+        K = self.Wk(x).view(B, T, self.n_heads, self.d_k).transpose(<span class="num">1</span>, <span class="num">2</span>)
+        V = self.Wv(x).view(B, T, self.n_heads, self.d_k).transpose(<span class="num">1</span>, <span class="num">2</span>)
+        <span class="cm"># 打分 + 缩放：(B, n_heads, T, T)</span>
+        scores = Q @ K.transpose(-<span class="num">2</span>, -<span class="num">1</span>) / math.sqrt(self.d_k)
+        <span class="kw">if</span> mask <span class="kw">is not</span> <span class="kw">None</span>:
+            scores = scores.masked_fill(mask == <span class="num">0</span>, float(<span class="str">'-inf'</span>))
+        attn = scores.softmax(dim=-<span class="num">1</span>)        <span class="cm"># 按行归一</span>
+        out = attn @ V                       <span class="cm"># 加权求和</span>
+        <span class="cm"># 拼回头并输出投影：(B, n_heads, T, d_k) -> (B, T, d_model)</span>
+        out = out.transpose(<span class="num">1</span>, <span class="num">2</span>).contiguous().view(B, T, -<span class="num">1</span>)
+        <span class="kw">return</span> self.Wo(out), attn</div>
+
+    <h3>8.3 因果掩码（GPT 自回归生成）</h3>
+    <div class="code"><span class="cm"># 手撕 3：因果掩码 —— 下三角矩阵，第 i 个词只能看 0..i</span>
+seq_len = <span class="num">5</span>
+mask = np.tril(np.ones((seq_len, seq_len)))   <span class="cm"># 下三角为 1，上三角为 0</span>
+<span class="cm"># [[1, 0, 0, 0, 0],</span>
+<span class="cm">#  [1, 1, 0, 0, 0],</span>
+<span class="cm">#  [1, 1, 1, 0, 0], ...]</span></div>
+
+    <h3>8.4 复杂度速算</h3>
+    <p>注意力权重矩阵是 n×n，每个元素一次点积 O(d) → <strong>总复杂度 O(n²·d)</strong>。序列长度 n 翻倍，计算量翻四倍——这就是「长上下文贵」的根源，也是 FlashAttention、稀疏注意力、线性注意力诞生的原因。</p>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>手撕三件套：注意力（NumPy）、多头（PyTorch）、因果掩码（tril）。</li>
+        <li>四个必须写出来的细节：÷√d_k、mask 加 −inf、softmax 减 max、维度变换。</li>
+        <li>复杂度 O(n²d)，面试可能追问如何优化。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ======================= 9 面试追问清单 ======================= -->
+  <section class="chapter" id="s9">
+    <h2><span class="chapter-no">9</span>面试追问清单</h2>
+    <p class="chapter-sub">Follow-up Questions</p>
+
+    <table class="tb">
+      <tr><th>追问</th><th>参考回答</th></tr>
+      <tr><td class="qna-q">为什么除以 √d_k？</td><td class="qna-a">d_k 很大时点积方差随维度线性增长，分数绝对值变大 → Softmax 进入饱和区（权重接近 one-hot），梯度趋近 0。除以 √d_k 把方差压回 1，让 Softmax 保持「软」。</td></tr>
+      <tr><td class="qna-q">为什么用 Softmax？</td><td class="qna-a">① 非负、② 每行和为 1（天然的概率解释）、③ 处处可导、④ 指数放大差异让「相关」和「不相关」拉开距离。</td></tr>
+      <tr><td class="qna-q">Softmax 前为什么要减 max？</td><td class="qna-a">数值稳定：分数很大时 e^z 直接溢出为 inf。Softmax(z) = Softmax(z − max) 结果不变，但指数项落在安全范围。</td></tr>
+      <tr><td class="qna-q">mask 怎么实现？</td><td class="qna-a">被禁止位置加 −inf（实现上常加 −1e9），Softmax 后权重精确为 0。</td></tr>
+      <tr><td class="qna-q">多头有什么好处？</td><td class="qna-a">不同头在不同子空间学不同关系（语法/指代/位置），模型表达能力更强；总计算量不变（维度被切分）。</td></tr>
+      <tr><td class="qna-q">自注意力与交叉注意力的区别？</td><td class="qna-a">Q、K、V 同源为自注意力（句内关系）；Q 来自解码器、K/V 来自编码器为交叉注意力（对齐）。</td></tr>
+      <tr><td class="qna-q">注意力需要位置编码吗？</td><td class="qna-a">需要。注意力是「集合运算」，对词序不敏感（打乱输入行，输出行跟着打乱——置换等变）；位置信息靠位置编码显式注入。</td></tr>
+      <tr><td class="qna-q">复杂度是多少？长序列怎么办？</td><td class="qna-a">O(n²d)。优化方向：稀疏注意力（Longformer）、线性注意力（Performer）、分块/IO 优化（FlashAttention）、KV Cache 加速推理。</td></tr>
+      <tr><td class="qna-q">推理时 KV Cache 是什么？</td><td class="qna-a">自回归生成时，前面 token 的 K、V 每次都被重算。把它们缓存起来，每个新 token 只算新增的 Q·K——把每步 O(n²) 降到 O(n)。</td></tr>
+      <tr><td class="qna-q">训练时注意什么？</td><td class="qna-a">对注意力权重加 dropout；配合 warmup 学习率与梯度裁剪（Transformer 训练易不稳定）。</td></tr>
+    </table>
+
+    <div class="takeaway"><span class="tag">本节小结</span>
+      <ul>
+        <li>核心追问绕不开：√d_k、Softmax、mask、复杂度、KV Cache。</li>
+        <li>回答公式：先说「一句话结论」，再补「为什么」，最后举一个例子。</li>
+        <li>配合第 8 章代码边写边讲，面试基本稳了。</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<button class="to-top" id="toTop" title="回到顶部">&#8593;</button>
+<footer>注意力机制 · 互动可视化 + 面试手撕代码 · 本地网页无依赖</footer>
+
+<script src="demos.js"></script>
+</body>
+</html>
